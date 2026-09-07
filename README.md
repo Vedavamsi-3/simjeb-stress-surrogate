@@ -72,6 +72,7 @@ run_2_make_splits.py       stage 2
 run_3_train.py             stage 3
 run_4_evaluate.py          stage 4
 run_5_plots.py             stage 5
+kaggle_train.ipynb         stages 3-5 on a Kaggle GPU
 
 output/                    everything produced, nothing anywhere else
   graphs/                  one .npz per bracket, geometry
