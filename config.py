@@ -191,7 +191,22 @@ LOG_TARGET = True
 # TRAINING
 # ---------------------------------------------------------------------------
 
-BATCH_SIZE = 2             # brackets per step; limited by memory, not by choice
+# Brackets per step. One, and it is a memory limit rather than a choice.
+#
+# Bracket sizes vary fourfold - 18,000 nodes to 120,174 - and batches are
+# shuffled, so what matters is not the average draw but the worst one. At
+# batch 2 the two largest brackets landing together needs about 20 GB, and a
+# T4 has 14.56 usable. That is not a rare edge case over a long run: it
+# happened at epoch 2.
+#
+# At batch 1 the largest single bracket projects to about 10.3 GB, which fits
+# with roughly 4 GB to spare.
+#
+# The cost is noisier gradients and twice as many steps per epoch. Neither is
+# a real problem here - GRAD_CLIP already caps the damage a single extreme
+# bracket can do, and small batches are closer to what MeshGraphNet papers
+# use anyway.
+BATCH_SIZE = 1
 LEARNING_RATE = 1e-3
 WEIGHT_DECAY = 1e-3
 # A ceiling, not a target. The run is meant to end for a reason that says
