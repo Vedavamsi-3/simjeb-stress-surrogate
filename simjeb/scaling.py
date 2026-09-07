@@ -40,13 +40,41 @@ class Scaler:
     mean: np.ndarray
     spread: np.ndarray
 
+    def matched(self, values, array):
+        """``array``, as something that can be combined with ``values``.
+
+        The mean and spread are numpy arrays: they are fitted here and saved
+        with numpy, and this module deliberately does not depend on torch.
+        But predictions are torch tensors, and during training they live on
+        the GPU.
+
+        Multiplying a CUDA tensor by a numpy array does not work. Numpy tries
+        to convert the tensor, and it cannot - the data is in video memory,
+        not host memory. The error surfaces from deep inside torch and names
+        neither the scaler nor the reason.
+
+        It also does not show up on a CPU: there the conversion succeeds, so
+        the whole problem is invisible until the first run on a GPU. Which is
+        exactly how it was found.
+        """
+        if isinstance(values, np.ndarray):
+            return array
+
+        import torch      # only reached when a tensor was passed in
+
+        return torch.as_tensor(array, dtype=values.dtype, device=values.device)
+
     def apply(self, values):
         """Raw numbers in, comparable numbers out."""
-        return (values - self.mean) / self.spread
+        mean = self.matched(values, self.mean)
+        spread = self.matched(values, self.spread)
+        return (values - mean) / spread
 
     def undo(self, values):
         """The exact opposite, for turning predictions back into MPa."""
-        return values * self.spread + self.mean
+        mean = self.matched(values, self.mean)
+        spread = self.matched(values, self.spread)
+        return values * spread + mean
 
 
 @dataclass
