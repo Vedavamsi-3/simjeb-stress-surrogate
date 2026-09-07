@@ -194,7 +194,12 @@ LOG_TARGET = True
 BATCH_SIZE = 2             # brackets per step; limited by memory, not by choice
 LEARNING_RATE = 1e-3
 WEIGHT_DECAY = 1e-3
-MAX_EPOCHS = 300
+# A ceiling, not a target. The run is meant to end for a reason that says
+# something - the validation loss stopped improving, or the clock ran out -
+# and not because an arbitrary number was reached. Set high enough that it
+# never binds: at roughly 70 seconds an epoch, the 10.5-hour budget stops the
+# run around epoch 540 long before this does.
+MAX_EPOCHS = 3000
 GRAD_CLIP = 1.0
 
 # Stop when the validation loss has not improved for this many epochs. Without
