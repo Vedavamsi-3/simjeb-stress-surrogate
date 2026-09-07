@@ -1,0 +1,39 @@
+model_id,reason
+27,rotated: interfaces sit up to 38.1 mm from the typical frame
+53,rotated: interfaces sit up to 38.2 mm from the typical frame
+65,rotated: interfaces sit up to 9.2 mm from the typical frame
+92,rotated: interfaces sit up to 19.0 mm from the typical frame
+106,rotated: interfaces sit up to 18.5 mm from the typical frame
+107,rotated: interfaces sit up to 38.3 mm from the typical frame
+115,rotated: interfaces sit up to 9.6 mm from the typical frame
+123,"GraphError: deck says 214,955 mesh nodes, the results file has 214,953 rows"
+124,rotated: interfaces sit up to 18.6 mm from the typical frame
+130,rotated: interfaces sit up to 9.6 mm from the typical frame
+142,rotated: interfaces sit up to 38.1 mm from the typical frame
+177,rotated: interfaces sit up to 10.9 mm from the typical frame
+180,rotated: interfaces sit up to 6.1 mm from the typical frame
+185,rotated: interfaces sit up to 38.1 mm from the typical frame
+213,rotated: interfaces sit up to 38.0 mm from the typical frame
+217,rotated: interfaces sit up to 38.1 mm from the typical frame
+223,rotated: interfaces sit up to 10.0 mm from the typical frame
+261,rotated: interfaces sit up to 5.2 mm from the typical frame
+262,rotated: interfaces sit up to 5.2 mm from the typical frame
+271,rotated: interfaces sit up to 9.6 mm from the typical frame
+293,GraphError: no MAT1 card: the material is unknown
+297,rotated: interfaces sit up to 6.1 mm from the typical frame
+356,rotated: interfaces sit up to 14.9 mm from the typical frame
+362,rotated: interfaces sit up to 52.0 mm from the typical frame
+382,rotated: interfaces sit up to 19.0 mm from the typical frame
+383,rotated: interfaces sit up to 19.0 mm from the typical frame
+386,rotated: interfaces sit up to 19.0 mm from the typical frame
+387,rotated: interfaces sit up to 19.0 mm from the typical frame
+388,"GraphError: deck says 149,032 mesh nodes, the results file has 149,028 rows"
+407,rotated: interfaces sit up to 20.0 mm from the typical frame
+412,rotated: interfaces sit up to 17.2 mm from the typical frame
+413,rotated: interfaces sit up to 17.2 mm from the typical frame
+493,rotated: interfaces sit up to 7.5 mm from the typical frame
+511,rotated: interfaces sit up to 38.2 mm from the typical frame
+523,rotated: interfaces sit up to 38.1 mm from the typical frame
+524,rotated: interfaces sit up to 38.0 mm from the typical frame
+536,rotated: interfaces sit up to 38.1 mm from the typical frame
+601,rotated: interfaces sit up to 56.6 mm from the typical frame

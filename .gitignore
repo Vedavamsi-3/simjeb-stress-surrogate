@@ -1,0 +1,60 @@
+# ---------------------------------------------------------------------------
+# THE BUILT DATASET  -  not in git
+# ---------------------------------------------------------------------------
+# About 4 GB across 370 brackets, and rebuildable from the raw SimJEB files by
+# run_1_build_dataset.py. Large generated files do not belong in a repository:
+# they make it slow to clone forever, and they are not what anyone reads.
+output/graphs/
+output/features/
+
+# Any staging copy arranged for a Kaggle upload. It is the same 2.2 GB as
+# output/features/ under a different name, and just as unwelcome here. The
+# pattern is deliberately broad: a folder like this gets made in a hurry,
+# under whatever name suited that day, and one forgotten copy is enough to
+# put a gigabyte in a repository permanently.
+kaggle_upload*/
+*_upload/
+*upload_dataset/
+
+# Checkpoints, history and the per-run figures. A checkpoint is a few MB and
+# there is one per run. The numbers worth keeping from a run are in
+# results.json and per_bracket.csv, which are tiny - copy those in by hand
+# when a run is worth recording.
+output/runs/
+
+
+# ---------------------------------------------------------------------------
+# KEPT ON PURPOSE  -  do not add these
+# ---------------------------------------------------------------------------
+# output/split.json      which brackets train / validate / test
+# output/scaling.npz     the numbers every input passes through
+# output/reports/*.csv   what was excluded, and why
+#
+# All small, and together they are what makes a result reproducible. A score
+# without the split it was measured on is not a claim anyone can check.
+
+
+# ---------------------------------------------------------------------------
+# RAW DATA
+# ---------------------------------------------------------------------------
+# The SimJEB files themselves live outside this folder and are pointed at by
+# config.py. These patterns are here in case a copy is ever dropped inside.
+*.fem
+*.vtk
+*field.csv
+*.zip
+
+
+# ---------------------------------------------------------------------------
+# PYTHON AND EDITORS
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+.venv/
+venv/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
