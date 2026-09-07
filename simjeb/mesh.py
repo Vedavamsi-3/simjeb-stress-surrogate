@@ -23,8 +23,21 @@ Run on its own to check one bracket::
 from dataclasses import dataclass
 from pathlib import Path
 
-import meshio
 import numpy as np
+
+# meshio is NOT imported here, and that is deliberate.
+#
+# One function in this module needs it: read(), which parses a .vtk file. That
+# happens in stage 1 and nowhere else. Stages 3 to 5 - training, scoring,
+# plotting - import this module only because graph.py does, and they never
+# open a mesh: the features were built once and cached.
+#
+# Imported at the top, a machine that only ever trains would still need a mesh
+# format library installed, and would fail at import with a
+# ModuleNotFoundError naming a library it has no use for. That is exactly what
+# happened on Kaggle.
+#
+# So the import sits inside read(), where the dependency is real.
 
 
 class MeshError(Exception):
@@ -49,6 +62,8 @@ class Mesh:
 
 def read(path):
     """Load a ``.vtk``. Raises :class:`MeshError` if it holds no tetrahedra."""
+    import meshio       # see the note beside the imports
+
     path = Path(path)
     raw = meshio.read(path)
 
