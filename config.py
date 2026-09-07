@@ -150,8 +150,17 @@ MAX_LANDMARK_OFFSET_MM = 5.0
 # THE SPLIT
 # ---------------------------------------------------------------------------
 
-TEST_FRACTION = 0.2
-VAL_FRACTION = 0.1
+# Train stays at 70% either way; these two only trade against each other.
+# 15/15 rather than 10/20 buys a steadier early-stopping decision at the cost
+# of a wider error bar on the reported test number.
+#
+# Why that trade is worth it here: nodes within one bracket are not
+# independent - same shape, same mesh, same load path - so the effective
+# sample size of a split is closer to its BRACKET count than its node count.
+# At 10% the validation set was 33 brackets, and one hard bracket carried 3%
+# of the number the stopping rule watches. 50 is thin but no longer fragile.
+TEST_FRACTION = 0.15
+VAL_FRACTION = 0.15
 SPLIT_SEED = 0
 
 # Brackets sharing a GrabCAD submission are variants of one design. They must
