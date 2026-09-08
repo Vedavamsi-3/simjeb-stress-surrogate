@@ -43,6 +43,10 @@ class EpochRecord:
     val_mae_mpa: float
     seconds: float
 
+    # Defaulted, so the history.csv of a run made before this column existed
+    # still loads - run_5_plots.py rebuilds these records from that file.
+    val_peak_mae_mpa: float = 0.0
+
 
 @dataclass
 class History:
@@ -90,8 +94,35 @@ def to_mpa(scaled_prediction, scalers, log_target):
     return in_log_space
 
 
+def weighted_mse(prediction, target, peak_weight=0.0):
+    """Mean squared error, with the high-stress nodes counted for more.
+
+    Why this is not plain MSE is the whole story of the first full run: the
+    peaks are a fraction of a percent of the nodes, so a model that ignores
+    them entirely still scores well. See PEAK_WEIGHT in config.py.
+
+    ``target`` is standardised log-stress - mean 0, spread 1 - so ``relu``
+    keeps only the above-average nodes and leaves everything else on a weight
+    of 1. A node two spreads above average, at PEAK_WEIGHT 2, counts five
+    times.
+
+    Dividing by the total weight rather than by the node count keeps this a
+    weighted MEAN. The number stays on roughly the scale plain MSE was on,
+    which is what keeps the loss curve readable across the change.
+
+    peak_weight 0 returns exactly ``mse_loss``, so the old behaviour stays
+    available as a setting rather than as an older commit.
+    """
+    if not peak_weight:
+        return torch.nn.functional.mse_loss(prediction, target)
+
+    weights = 1.0 + peak_weight * torch.relu(target)
+    return (weights * (prediction - target) ** 2).sum() / weights.sum()
+
+
 @torch.no_grad()
-def evaluate(model, loader, scalers, log_target, device):
+def evaluate(model, loader, scalers, log_target, device,
+             peak_weight=0.0, peak_quantile=0.99):
     """Loss and error over a set of brackets, pooled and per bracket.
 
     Per bracket as well as pooled, because a pooled average is dominated by
@@ -104,13 +135,15 @@ def evaluate(model, loader, scalers, log_target, device):
     total_loss = 0.0
     total_absolute_error = 0.0
     total_nodes = 0
+    total_peak_error = 0.0
+    total_peak_nodes = 0
     per_bracket = {}
 
     for batch in loader:
         batch = batch.to(device)
         prediction = model.predict(batch)
 
-        loss = torch.nn.functional.mse_loss(prediction, batch.target)
+        loss = weighted_mse(prediction, batch.target, peak_weight)
         total_loss += float(loss) * batch.n_nodes
 
         predicted_mpa = to_mpa(prediction, scalers, log_target)
@@ -123,12 +156,26 @@ def evaluate(model, loader, scalers, log_target, device):
             rows = batch.rows_of(position)
             per_bracket[model_id] = float(error[rows].mean())
 
+            # The hottest nodes in THIS bracket, not in the batch. A per-batch
+            # threshold would let one severe bracket supply every peak node
+            # and a mild one supply none, which is not what "the worst 1% of
+            # each bracket" means.
+            stress = batch.stress_mpa[rows]
+            cutoff = torch.quantile(stress, peak_quantile)
+            hottest = stress >= cutoff
+            total_peak_error += float(error[rows][hottest].sum())
+            total_peak_nodes += int(hottest.sum())
+
     if total_nodes == 0:
         raise ValueError("nothing to evaluate")
 
     return {
         "loss": total_loss / total_nodes,
         "mae_mpa": total_absolute_error / total_nodes,
+
+        # The number the peaks are actually judged on. The pooled average
+        # hides it completely: it is a percent of the nodes.
+        "peak_mae_mpa": total_peak_error / max(total_peak_nodes, 1),
         "per_bracket": per_bracket,
         "median_bracket_mae": float(np.median(list(per_bracket.values()))),
     }
@@ -323,7 +370,7 @@ def train(model, train_loader, val_loader, scalers, settings, run_directory,
 
     print(f"device {device} | {len(train_loader)} batches per epoch")
     print(f"{'epoch':>6}{'train loss':>13}{'val loss':>11}"
-          f"{'val MAE MPa':>14}{'secs':>8}")
+          f"{'val MAE MPa':>14}{'peak MPa':>11}{'secs':>8}")
 
     started = time.time()
 
@@ -342,7 +389,7 @@ def train(model, train_loader, val_loader, scalers, settings, run_directory,
             optimizer.zero_grad(set_to_none=True)
 
             prediction = model.predict(batch)
-            loss = torch.nn.functional.mse_loss(prediction, batch.target)
+            loss = weighted_mse(prediction, batch.target, settings.PEAK_WEIGHT)
 
             # Work backwards through every operation to find, for each weight,
             # which direction reduces the loss.
@@ -363,13 +410,15 @@ def train(model, train_loader, val_loader, scalers, settings, run_directory,
             seen_nodes += batch.n_nodes
 
         scores = evaluate(model, val_loader, scalers, settings.LOG_TARGET,
-                          device)
+                          device, settings.PEAK_WEIGHT,
+                          settings.PEAK_QUANTILE)
 
         record = EpochRecord(
             epoch=epoch,
             train_loss=running_loss / max(seen_nodes, 1),
             val_loss=scores["loss"],
             val_mae_mpa=scores["mae_mpa"],
+            val_peak_mae_mpa=scores["peak_mae_mpa"],
             seconds=time.time() - epoch_started,
         )
         history.records.append(record)
@@ -391,7 +440,8 @@ def train(model, train_loader, val_loader, scalers, settings, run_directory,
 
         marker = "  *" if improved else ""
         print(f"{epoch:>6}{record.train_loss:>13.4f}{record.val_loss:>11.4f}"
-              f"{record.val_mae_mpa:>14.1f}{record.seconds:>8.0f}{marker}")
+              f"{record.val_mae_mpa:>14.1f}{record.val_peak_mae_mpa:>11.1f}"
+              f"{record.seconds:>8.0f}{marker}")
 
         if history.epochs_without_improvement >= settings.PATIENCE:
             history.stopped_because = (
@@ -457,6 +507,8 @@ if __name__ == "__main__":
         MIN_IMPROVEMENT = config.MIN_IMPROVEMENT
         MAX_HOURS = 1.0
         LOG_TARGET = config.LOG_TARGET
+        PEAK_WEIGHT = config.PEAK_WEIGHT
+        PEAK_QUANTILE = config.PEAK_QUANTILE
 
     model = model_module.MeshGraphNet(
         node_width=features_module.N_NODE_FEATURES,

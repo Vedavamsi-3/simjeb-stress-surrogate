@@ -58,6 +58,9 @@ class QuickSettings:
     MIN_IMPROVEMENT = config.MIN_IMPROVEMENT
     MAX_HOURS = 0.5
 
+    PEAK_WEIGHT = config.PEAK_WEIGHT
+    PEAK_QUANTILE = config.PEAK_QUANTILE
+
     LOG_TARGET = config.LOG_TARGET
     DEVICE = "cpu"              # a tiny model gains nothing from a GPU
     SEED = config.SEED
@@ -81,6 +84,9 @@ class RealSettings:
     PATIENCE = config.PATIENCE
     MIN_IMPROVEMENT = config.MIN_IMPROVEMENT
     MAX_HOURS = config.MAX_HOURS
+
+    PEAK_WEIGHT = config.PEAK_WEIGHT
+    PEAK_QUANTILE = config.PEAK_QUANTILE
 
     LOG_TARGET = config.LOG_TARGET
     DEVICE = config.DEVICE
@@ -246,11 +252,13 @@ def main():
         members = getattr(split, name)
         scores = training_module.evaluate(
             model, make_loader(members, shuffle=False), scalers,
-            settings.LOG_TARGET, device)
+            settings.LOG_TARGET, device, settings.PEAK_WEIGHT,
+            settings.PEAK_QUANTILE)
         detail = "  ".join(f"{k}:{v:,.0f}"
                            for k, v in sorted(scores["per_bracket"].items()))
         print(f"  {name:<6}{scores['mae_mpa']:>8.1f} MPa  "
-              f"(median bracket {scores['median_bracket_mae']:,.0f})   {detail}")
+              f"(median bracket {scores['median_bracket_mae']:,.0f}, "
+              f"hottest 1% {scores['peak_mae_mpa']:,.0f})   {detail}")
 
     print(f"  {'beat?':<6}{baseline:>8.1f} MPa   the trivial baseline")
 

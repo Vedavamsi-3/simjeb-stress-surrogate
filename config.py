@@ -217,6 +217,29 @@ WEIGHT_DECAY = 1e-3
 MAX_EPOCHS = 3000
 GRAD_CLIP = 1.0
 
+# How much extra a high-stress node counts for in the loss.
+#
+# Plain MSE averages over every node equally, and here that is a problem
+# rather than a detail. A bracket has around 36,000 nodes, and the stress
+# concentration - the only part anyone designs against - is a few dozen of
+# them. Their share of the average is under a percent, so the cheapest way for
+# the network to lower the loss is to predict the bulk field well and give up
+# on the peaks entirely.
+#
+# That is not a hypothetical. The first full run predicted a peak near 900 MPa
+# on every bracket in the dataset, whether its real peak was 630 or 7,800.
+#
+# The target is standardised log-stress, so a node this many spreads above
+# average counts (1 + PEAK_WEIGHT x spreads) times. Below-average nodes stay
+# at 1. Setting it to 0 gives back plain MSE exactly.
+PEAK_WEIGHT = 2.0
+
+# Which nodes get reported separately as "the peak" when scoring. Reported
+# only - it has no effect on training. 0.99 is the hottest 1% of each bracket,
+# measured per bracket rather than pooled so a mild bracket beside a severe
+# one still contributes its own worst nodes.
+PEAK_QUANTILE = 0.99
+
 # Stop when the validation loss has not improved for this many epochs. Without
 # it a network keeps improving on what it has seen long after it has stopped
 # improving on what it has not.
