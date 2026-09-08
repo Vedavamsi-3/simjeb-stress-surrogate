@@ -47,6 +47,7 @@ class QuickSettings:
     HIDDEN_WIDTH = 16
     MESSAGE_ROUNDS = 2
     DROPOUT = 0.0
+    CHECKPOINT_ACTIVATIONS = False   # nothing to save on a 2-block network
 
     BATCH_SIZE = 1              # the smallest memory footprint there is
     ACCUMULATION_STEPS = config.ACCUMULATION_STEPS
@@ -75,6 +76,7 @@ class RealSettings:
     HIDDEN_WIDTH = config.HIDDEN_WIDTH
     MESSAGE_ROUNDS = config.MESSAGE_ROUNDS
     DROPOUT = config.DROPOUT
+    CHECKPOINT_ACTIVATIONS = config.CHECKPOINT_ACTIVATIONS
 
     BATCH_SIZE = config.BATCH_SIZE
     ACCUMULATION_STEPS = config.ACCUMULATION_STEPS
@@ -178,7 +180,9 @@ def main():
     print(f"  commit     : {current_commit()}")
     print(f"  network    : {settings.HIDDEN_WIDTH} wide, "
           f"{settings.MESSAGE_ROUNDS} message rounds, "
-          f"dropout {settings.DROPOUT}")
+          f"dropout {settings.DROPOUT}"
+          + (", recomputing activations"
+             if settings.CHECKPOINT_ACTIVATIONS else ""))
     print(f"  training   : batch {settings.BATCH_SIZE} x "
           f"{settings.ACCUMULATION_STEPS} accumulated, "
           f"lr {settings.LEARNING_RATE}, weight decay {settings.WEIGHT_DECAY}")
@@ -217,6 +221,7 @@ def main():
         message_rounds=settings.MESSAGE_ROUNDS,
         output_width=1,
         dropout=settings.DROPOUT,
+        checkpoint_activations=settings.CHECKPOINT_ACTIVATIONS,
     )
     print(f"  parameters : {model.n_parameters:,}")
 
@@ -225,6 +230,7 @@ def main():
         n_edges=380_000 * settings.BATCH_SIZE,
         hidden_width=settings.HIDDEN_WIDTH,
         message_rounds=settings.MESSAGE_ROUNDS,
+        checkpoint_activations=settings.CHECKPOINT_ACTIVATIONS,
     )
     print(f"  memory     : roughly {memory:.1f} GB per training step")
     print()

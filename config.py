@@ -177,9 +177,26 @@ STRATIFY_BY_CATEGORY = True
 # THE MODEL
 # ---------------------------------------------------------------------------
 
-HIDDEN_WIDTH = 64          # numbers describing each node internally
+HIDDEN_WIDTH = 128         # numbers describing each node internally
 MESSAGE_ROUNDS = 8         # how many hops a node can see
 DROPOUT = 0.0
+
+# Trade time for memory: throw away each block's internal activations during
+# the forward pass and rebuild them during the backward one.
+#
+# This is here because of what the first full run said. It reached an R of
+# 0.29 on the brackets it had SEEN - it was not memorising the training set,
+# it could not fit it - and a network of 247,000 parameters against 8.4
+# million training nodes is a plausible reason why. The fix is a wider one.
+#
+# But 128 wide roughly doubles the edge tensors that already set the memory
+# ceiling, and the largest bracket does not fit on a T4 at that width. So the
+# two settings arrive together: without the recompute, HIDDEN_WIDTH 128 is an
+# out-of-memory error rather than an experiment.
+#
+# Costs about 30% in wall-clock. Turn it off to get the plain forward pass
+# back - at HIDDEN_WIDTH 64 it is not needed.
+CHECKPOINT_ACTIVATIONS = True
 
 # The stress target spans 300 to 15,000 MPa because the solver reports
 # unbounded stress at sharp corners. log1p compresses that tail without
@@ -199,8 +216,9 @@ LOG_TARGET = True
 # T4 has 14.56 usable. That is not a rare edge case over a long run: it
 # happened at epoch 2.
 #
-# At batch 1 the largest single bracket projects to about 10.3 GB, which fits
-# with roughly 4 GB to spare.
+# At batch 1 the largest single bracket projected to about 10.3 GB at
+# HIDDEN_WIDTH 64, which fitted with roughly 4 GB to spare. At 128 it would
+# not fit at all - see CHECKPOINT_ACTIVATIONS, which is what buys it back.
 #
 # The cost is noisier gradients and twice as many steps per epoch. Neither is
 # a real problem here - GRAD_CLIP already caps the damage a single extreme
@@ -222,13 +240,31 @@ BATCH_SIZE = 1
 # steps, fewer of them. Set to 1 to get the old behaviour back exactly.
 ACCUMULATION_STEPS = 8
 
-LEARNING_RATE = 1e-3
-WEIGHT_DECAY = 1e-3
+# Lowered from 1e-3 after the first full run, whose validation loss bounced
+# between 0.55 and 0.65 for its last 30 epochs while the training loss crept
+# steadily down - too large a step to settle.
+#
+# Not lowered as far as it looks. Accumulating 8 brackets already removes most
+# of the noise that caused the bouncing, and a larger effective batch supports
+# a LARGER learning rate, not a smaller one. Cutting this to 1e-4 while
+# accumulating 8x would have been moving two dials in opposite directions.
+LEARNING_RATE = 3e-4
+
+# A penalty on the size of every weight, pulling each one slightly towards
+# zero on every step. It buys smoother, less memorised answers by spending
+# capacity - which is the wrong trade for a model that cannot yet fit the data
+# it has already seen.
+#
+# Worth being honest about the size of this: AdamW multiplies the decay by the
+# learning rate, so at these values it was already a gentle force, perhaps a
+# ten-thousandth of the learning step. Turning it down is right, and it is not
+# what will move the result.
+WEIGHT_DECAY = 1e-5
 # A ceiling, not a target. The run is meant to end for a reason that says
 # something - the validation loss stopped improving, or the clock ran out -
 # and not because an arbitrary number was reached. Set high enough that it
-# never binds: at roughly 70 seconds an epoch, the 10.5-hour budget stops the
-# run around epoch 540 long before this does.
+# never binds: at roughly 85 seconds an epoch - 128 wide and recomputing - the
+# 10.5-hour budget stops the run around epoch 440 long before this does.
 MAX_EPOCHS = 3000
 GRAD_CLIP = 1.0
 
@@ -258,7 +294,10 @@ PEAK_QUANTILE = 0.99
 # Stop when the validation loss has not improved for this many epochs. Without
 # it a network keeps improving on what it has seen long after it has stopped
 # improving on what it has not.
-PATIENCE = 30
+# Raised from 30 with the learning rate drop: smaller steps mean smaller
+# per-epoch improvements, and 30 was already stopping runs on the noise in a
+# bouncing validation curve rather than on a real plateau.
+PATIENCE = 40
 MIN_IMPROVEMENT = 1e-5
 
 # Wall-clock budget in hours. The loop stops cleanly and can be resumed, so a

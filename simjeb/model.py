@@ -34,6 +34,7 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
+from torch.utils.checkpoint import checkpoint
 from torch_geometric.utils import scatter
 
 
@@ -141,7 +142,8 @@ class MeshGraphNet(nn.Module):
     """
 
     def __init__(self, node_width, edge_width=4, hidden_width=64,
-                 message_rounds=8, output_width=1, dropout=0.0):
+                 message_rounds=8, output_width=1, dropout=0.0,
+                 checkpoint_activations=False):
         super().__init__()
 
         self.node_width = node_width
@@ -149,6 +151,7 @@ class MeshGraphNet(nn.Module):
         self.hidden_width = hidden_width
         self.message_rounds = message_rounds
         self.output_width = output_width
+        self.checkpoint_activations = checkpoint_activations
 
         self.node_encoder = make_mlp(node_width, hidden_width, hidden_width)
         self.edge_encoder = make_mlp(edge_width, hidden_width, hidden_width)
@@ -166,7 +169,27 @@ class MeshGraphNet(nn.Module):
         edge_state = self.edge_encoder(edge_features)
 
         for block in self.blocks:
-            node_state, edge_state = block(node_state, edge_state, edge_index)
+            if self.checkpoint_activations and self.training:
+                # Keep only what ENTERS this block and throw its internals
+                # away, then rebuild them from the weights when the backward
+                # pass arrives back here. Memory stops growing with
+                # MESSAGE_ROUNDS; the cost is one extra forward pass per
+                # block, around 30% more time.
+                #
+                # This is what makes HIDDEN_WIDTH 128 fit on a T4 at all. See
+                # estimate_memory_gb below for the two figures side by side.
+                #
+                # use_reentrant=False is not optional. The older reentrant
+                # version returns a ZERO gradient when no input to the
+                # checkpointed function requires one - and node_features do
+                # not - so the model would train on nothing, silently and
+                # without an error to notice.
+                node_state, edge_state = checkpoint(
+                    block, node_state, edge_state, edge_index,
+                    use_reentrant=False)
+            else:
+                node_state, edge_state = block(node_state, edge_state,
+                                               edge_index)
 
         return self.decoder(node_state)
 
@@ -183,13 +206,15 @@ class MeshGraphNet(nn.Module):
         return total
 
     def describe(self):
+        recompute = " recomputing" if self.checkpoint_activations else ""
         return (f"MeshGraphNet({self.node_width} node features, "
                 f"{self.edge_width} edge features, {self.hidden_width} wide, "
-                f"{self.message_rounds} rounds) - {self.n_parameters:,} parameters")
+                f"{self.message_rounds} rounds{recompute}) - "
+                f"{self.n_parameters:,} parameters")
 
 
 def estimate_memory_gb(n_nodes, n_edges, hidden_width, message_rounds,
-                       bytes_per_number=4):
+                       bytes_per_number=4, checkpoint_activations=False):
     """Roughly how much working memory one training step needs, in GB.
 
     Backpropagation keeps every block's intermediate tensors alive, so memory
@@ -208,6 +233,15 @@ def estimate_memory_gb(n_nodes, n_edges, hidden_width, message_rounds,
         + n_nodes * 2 * hidden_width    # the concatenated node input
         + n_nodes * hidden_width        # the node update
     )
+
+    if checkpoint_activations:
+        # Only the two states ENTERING each block survive the forward pass;
+        # everything inside is rebuilt during the backward one, a block at a
+        # time. So the depth term shrinks to the boundaries, and just one
+        # block's full working set is alive on top of them.
+        boundaries = (n_nodes + n_edges) * hidden_width * message_rounds
+        return (boundaries + per_block) * bytes_per_number / 1e9
+
     return per_block * message_rounds * bytes_per_number / 1e9
 
 
@@ -220,6 +254,8 @@ def build(node_width, config_module):
         message_rounds=config_module.MESSAGE_ROUNDS,
         output_width=1,
         dropout=config_module.DROPOUT,
+        checkpoint_activations=getattr(config_module,
+                                       "CHECKPOINT_ACTIVATIONS", False),
     )
 
 
@@ -284,10 +320,14 @@ if __name__ == "__main__":
     print("weights should give. Training is what changes it.")
 
     print(f"\nestimated working memory for one training step:")
+    print(f"  {'':>26}{'stored':>10}{'recomputed':>13}")
     for size in (1, 2, 4):
         nodes = batch.n_nodes // 2 * size
         edges = batch.n_edges // 2 * size
-        gigabytes = estimate_memory_gb(nodes, edges, config.HIDDEN_WIDTH,
-                                       config.MESSAGE_ROUNDS)
-        print(f"  batch of {size}: {nodes:>8,} nodes, {edges:>9,} edges"
-              f"  ->  {gigabytes:>5.1f} GB")
+        plain = estimate_memory_gb(nodes, edges, config.HIDDEN_WIDTH,
+                                   config.MESSAGE_ROUNDS)
+        saved = estimate_memory_gb(nodes, edges, config.HIDDEN_WIDTH,
+                                   config.MESSAGE_ROUNDS,
+                                   checkpoint_activations=True)
+        print(f"  batch of {size}: {nodes:>7,} nodes"
+              f"{plain:>9.1f} GB{saved:>11.1f} GB")
