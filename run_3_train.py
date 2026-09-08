@@ -17,6 +17,7 @@ which is what makes a run longer than a session possible.
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -97,6 +98,31 @@ def parse_arguments():
     return parser.parse_args()
 
 
+def current_commit():
+    """The git commit the code is sitting on, or "unknown".
+
+    settings.json already records every NUMBER a run used. It does not record
+    the CODE, and the two are not the same thing: a loss function can change
+    while every setting stays identical, and then two run folders disagree for
+    a reason nothing on disk explains.
+
+    Six lines to close that. Kaggle clones the repo rather than pasting it, so
+    the commit is available there too - which means every run folder, wherever
+    it was produced, points back at exactly the code that produced it.
+
+    Wrapped in try/except because a missing git, or a copy of the code that is
+    not a repository at all, must not stop a ten-hour run from starting.
+    """
+    try:
+        finished = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=Path(__file__).parent, capture_output=True, text=True,
+            timeout=10, check=True)
+        return finished.stdout.strip() or "unknown"
+    except Exception:            # noqa: BLE001 - recorded, never raised
+        return "unknown"
+
+
 def settings_as_dict(settings):
     """The settings, for writing into the run folder.
 
@@ -109,6 +135,8 @@ def settings_as_dict(settings):
         value = getattr(settings, name)
         if isinstance(value, (int, float, str, bool)):
             values[name] = value
+
+    values["GIT_COMMIT"] = current_commit()
     return values
 
 
@@ -139,6 +167,7 @@ def main():
         print("FULL RUN")
     print("=" * 70)
     print(f"  run folder : {run_directory}")
+    print(f"  commit     : {current_commit()}")
     print(f"  network    : {settings.HIDDEN_WIDTH} wide, "
           f"{settings.MESSAGE_ROUNDS} message rounds, "
           f"dropout {settings.DROPOUT}")
