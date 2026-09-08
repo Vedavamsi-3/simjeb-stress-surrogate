@@ -381,28 +381,48 @@ def train(model, train_loader, val_loader, scalers, settings, run_directory,
         running_loss = 0.0
         seen_nodes = 0
 
-        for batch in train_loader:
-            batch = batch.to(device)
+        # How many brackets go into one update. See ACCUMULATION_STEPS in
+        # config.py; 1 gives back a step per bracket, as before.
+        accumulation = max(1, settings.ACCUMULATION_STEPS)
+        n_batches = len(train_loader)
 
-            # PyTorch ADDS gradients rather than replacing them, so without
-            # this they pile up across steps and the weights fly off.
-            optimizer.zero_grad(set_to_none=True)
+        # PyTorch ADDS gradients rather than replacing them. Between updates
+        # that is exactly what is wanted here - it is the accumulating - which
+        # is why they are cleared explicitly after each step instead.
+        optimizer.zero_grad(set_to_none=True)
+
+        for position, batch in enumerate(train_loader):
+            batch = batch.to(device)
 
             prediction = model.predict(batch)
             loss = weighted_mse(prediction, batch.target, settings.PEAK_WEIGHT)
 
             # Work backwards through every operation to find, for each weight,
             # which direction reduces the loss.
-            loss.backward()
+            #
+            # Divided so what piles up is the MEAN gradient over the group and
+            # not its sum. Without this the size of a step would grow with
+            # ACCUMULATION_STEPS, and LEARNING_RATE would quietly mean
+            # something different at every setting of it.
+            (loss / accumulation).backward()
 
-            # Cap the size of the update. One bracket with an extreme stress
-            # singularity can produce a gradient large enough to undo an hour
-            # of progress in a single step.
-            if settings.GRAD_CLIP:
-                torch.nn.utils.clip_grad_norm_(model.parameters(),
-                                               settings.GRAD_CLIP)
+            # 232 brackets do not divide by 8, so the last group of an epoch
+            # is short. It is stepped on anyway rather than discarded.
+            last_of_epoch = (position + 1) == n_batches
+            if (position + 1) % accumulation == 0 or last_of_epoch:
+                # Cap the size of the update. One bracket with an extreme
+                # stress singularity can produce a gradient large enough to
+                # undo an hour of progress in a single step.
+                #
+                # Clipping here rather than once per bracket means it now caps
+                # the update that actually gets applied, which is what the
+                # setting was always meant to do.
+                if settings.GRAD_CLIP:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(),
+                                                   settings.GRAD_CLIP)
 
-            optimizer.step()
+                optimizer.step()
+                optimizer.zero_grad(set_to_none=True)
 
             # .detach() first: loss still carries the graph that produced
             # it, and converting it directly would keep that graph alive.
@@ -509,6 +529,7 @@ if __name__ == "__main__":
         LOG_TARGET = config.LOG_TARGET
         PEAK_WEIGHT = config.PEAK_WEIGHT
         PEAK_QUANTILE = config.PEAK_QUANTILE
+        ACCUMULATION_STEPS = config.ACCUMULATION_STEPS
 
     model = model_module.MeshGraphNet(
         node_width=features_module.N_NODE_FEATURES,

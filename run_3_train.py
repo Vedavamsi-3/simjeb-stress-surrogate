@@ -49,6 +49,7 @@ class QuickSettings:
     DROPOUT = 0.0
 
     BATCH_SIZE = 1              # the smallest memory footprint there is
+    ACCUMULATION_STEPS = config.ACCUMULATION_STEPS
     LEARNING_RATE = 1e-3
     WEIGHT_DECAY = config.WEIGHT_DECAY
     MAX_EPOCHS = 3
@@ -76,6 +77,7 @@ class RealSettings:
     DROPOUT = config.DROPOUT
 
     BATCH_SIZE = config.BATCH_SIZE
+    ACCUMULATION_STEPS = config.ACCUMULATION_STEPS
     LEARNING_RATE = config.LEARNING_RATE
     WEIGHT_DECAY = config.WEIGHT_DECAY
     MAX_EPOCHS = config.MAX_EPOCHS
@@ -177,7 +179,8 @@ def main():
     print(f"  network    : {settings.HIDDEN_WIDTH} wide, "
           f"{settings.MESSAGE_ROUNDS} message rounds, "
           f"dropout {settings.DROPOUT}")
-    print(f"  training   : batch {settings.BATCH_SIZE}, "
+    print(f"  training   : batch {settings.BATCH_SIZE} x "
+          f"{settings.ACCUMULATION_STEPS} accumulated, "
           f"lr {settings.LEARNING_RATE}, weight decay {settings.WEIGHT_DECAY}")
     print(f"  stopping   : up to {settings.MAX_EPOCHS} epochs, "
           f"patience {settings.PATIENCE}, budget {settings.MAX_HOURS} h")

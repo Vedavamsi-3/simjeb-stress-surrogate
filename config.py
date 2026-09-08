@@ -207,6 +207,21 @@ LOG_TARGET = True
 # bracket can do, and small batches are closer to what MeshGraphNet papers
 # use anyway.
 BATCH_SIZE = 1
+
+# How many brackets contribute to one weight update.
+#
+# BATCH_SIZE is pinned at 1 by memory rather than by choice, and one bracket
+# is a noisy thing to steer by: the gradient it gives is the reaction to one
+# shape, not to the dataset. Adding the gradients up over several brackets
+# before stepping recovers most of what a real batch would have given - about
+# 8x less noise here - and costs nothing in memory, because the brackets are
+# still processed one at a time and each one's working memory is freed before
+# the next begins.
+#
+# What it does change is 29 weight updates an epoch instead of 232: steadier
+# steps, fewer of them. Set to 1 to get the old behaviour back exactly.
+ACCUMULATION_STEPS = 8
+
 LEARNING_RATE = 1e-3
 WEIGHT_DECAY = 1e-3
 # A ceiling, not a target. The run is meant to end for a reason that says
