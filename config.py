@@ -308,6 +308,71 @@ SEED = 0
 DEVICE = "cuda"            # falls back to cpu automatically if absent
 
 
+# ---------------------------------------------------------------------------
+# THE OVERFIT TEST
+# ---------------------------------------------------------------------------
+# A diagnostic, not a model. Run it with: python run_3_train.py --overfit
+#
+# The question it answers is narrow and worth stating exactly: CAN this network,
+# with these nine features, represent the mapping at all? Not "does it
+# generalise" - it is handed a handful of brackets and allowed to memorise them,
+# with regularisation off and early stopping disabled.
+#
+# That matters because run 2 left two explanations standing at once. It reached
+# R 0.62 on brackets it had SEEN, which is too low to call the fitting solved,
+# while the train-to-test gap grew five-fold, which is overfitting. A model can
+# be short of capacity and short of information at the same time, and the usual
+# dials do not separate them.
+#
+# This does. Give it 16 brackets and 1500 passes over them:
+#
+#   train R above ~0.9  the information is there and the network can express
+#                       it. Everything left is a generalisation problem, and
+#                       the next run is regularisation and more data.
+#   train R stuck low   it cannot fit brackets it sees constantly, so two nodes
+#                       somewhere have near-identical neighbourhoods and very
+#                       different stress. No width and no epoch count fixes
+#                       that; the inputs have to change.
+#
+# Note what a failure does NOT prove. The network sees a node's 8-hop
+# neighbourhood and nothing else, so "the inputs" here means the features AND
+# the reach of the message passing together. And a deep residual stack can be
+# hard to optimise even when the function is representable - so if it plateaus,
+# raise LEARNING_RATE and MESSAGE_ROUNDS before concluding anything.
+
+# Which brackets. Chosen by sorting the 232 training brackets by peak stress,
+# cutting that into 16 equal bands, and taking the SMALLEST bracket in each.
+#
+# Every part of that rule earns its place:
+#
+#   from train only     val and test stay clean, so run 2 remains comparable
+#   sorted by peak      the failure being diagnosed is peak magnitude, and a
+#                       random 16 would be mostly ordinary ~1000 MPa brackets
+#   spanning the range  499 to 7,835 MPa, a factor of 15. If they all had
+#                       similar peaks, "predict 1000 everywhere" would score
+#                       well and a model that learned nothing would look like
+#                       a pass
+#   smallest per band   9k-20k nodes each, which is a 5-second epoch instead
+#                       of a 159-second one
+#
+# 236 is in there deliberately: it holds the highest peak in the whole dataset
+# at 7,835 MPa, and happens to be small. It is the single hardest case there is.
+#
+# Not chosen by "whichever brackets scored worst", which would have selected
+# outliers and possibly corrupted data - and then a failure to fit would be
+# ambiguous between bad features and a bad bracket.
+OVERFIT_BRACKETS = [30, 69, 70, 72, 202, 236, 329, 348, 379, 421,
+                    433, 494, 504, 506, 546, 631]
+
+# How many validation brackets to keep during the test. Four, because at a
+# 5-second epoch a full 50-bracket validation pass would cost more than the
+# training it is meant to be watching. Nothing here is decided on validation
+# anyway - the number being read is train R.
+OVERFIT_VAL_BRACKETS = 4
+
+OVERFIT_EPOCHS = 1500
+
+
 def describe():
     """A one-screen summary of the settings, for the top of a run log."""
     lines = [

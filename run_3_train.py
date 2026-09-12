@@ -67,6 +67,55 @@ class QuickSettings:
     DEVICE = "cpu"              # a tiny model gains nothing from a GPU
     SEED = config.SEED
 
+    LIMIT_TRAIN_BRACKETS = []   # all of them
+    LIMIT_VAL_BRACKETS = 0      # all of them
+
+
+class OverfitSettings:
+    """Can this network fit 16 brackets it is shown 1500 times?
+
+    Identical to RealSettings except for the four things that would otherwise
+    give a low score an excuse: the dataset is tiny, the epochs are many, both
+    regularisers are off, and early stopping is disabled. See THE OVERFIT TEST
+    in config.py for what each outcome means.
+    """
+
+    NAME = "overfit"
+
+    HIDDEN_WIDTH = config.HIDDEN_WIDTH
+    MESSAGE_ROUNDS = config.MESSAGE_ROUNDS
+    DROPOUT = 0.0                     # nothing held back
+    CHECKPOINT_ACTIVATIONS = config.CHECKPOINT_ACTIVATIONS
+
+    BATCH_SIZE = config.BATCH_SIZE
+
+    # One bracket per update, not eight. Accumulation trades update COUNT for
+    # steadier updates, and on 16 brackets that trade goes the wrong way: at 8
+    # it would be 2 updates an epoch, so 1500 epochs would be 3,000 updates -
+    # fewer than run 2 managed in 235. At 1 it is 24,000.
+    ACCUMULATION_STEPS = 1
+
+    LEARNING_RATE = config.LEARNING_RATE
+    WEIGHT_DECAY = 0.0                # nothing held back
+    MAX_EPOCHS = config.OVERFIT_EPOCHS
+    GRAD_CLIP = config.GRAD_CLIP
+
+    # Memorising is the goal here, so stopping when validation stalls would
+    # end the run at exactly the point it starts answering the question.
+    PATIENCE = 10 ** 9
+    MIN_IMPROVEMENT = config.MIN_IMPROVEMENT
+    MAX_HOURS = config.MAX_HOURS
+
+    LOG_TARGET = config.LOG_TARGET
+    DEVICE = config.DEVICE
+    SEED = config.SEED
+
+    PEAK_WEIGHT = config.PEAK_WEIGHT
+    PEAK_QUANTILE = config.PEAK_QUANTILE
+
+    LIMIT_TRAIN_BRACKETS = config.OVERFIT_BRACKETS
+    LIMIT_VAL_BRACKETS = config.OVERFIT_VAL_BRACKETS
+
 
 class RealSettings:
     """Everything straight from config.py."""
@@ -96,11 +145,17 @@ class RealSettings:
     DEVICE = config.DEVICE
     SEED = config.SEED
 
+    LIMIT_TRAIN_BRACKETS = []         # all of them
+    LIMIT_VAL_BRACKETS = 0            # all of them
+
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--quick", action="store_true",
                         help="tiny network, 3 epochs: checks the code runs")
+    parser.add_argument("--overfit", action="store_true",
+                        help="can it memorise 16 brackets? a diagnostic, "
+                             "not a model")
     parser.add_argument("--name", default=None,
                         help="name for the run folder (default: the mode)")
     parser.add_argument("--fresh", action="store_true",
@@ -152,7 +207,12 @@ def settings_as_dict(settings):
 
 def main():
     arguments = parse_arguments()
-    settings = QuickSettings() if arguments.quick else RealSettings()
+    if arguments.quick:
+        settings = QuickSettings()
+    elif arguments.overfit:
+        settings = OverfitSettings()
+    else:
+        settings = RealSettings()
 
     config.make_directories()
     run_name = arguments.name or settings.NAME
@@ -169,10 +229,32 @@ def main():
     split = splits_module.Split.load(config.SPLIT_FILE)
     scalers = scaling_module.Scalers.load(config.SCALING_FILE)
 
+    # Narrowed only by --overfit; every other mode gets the whole split.
+    #
+    # The training ids are listed explicitly rather than taken as "the first
+    # N", because WHICH brackets they are is the entire design of that test -
+    # see OVERFIT_BRACKETS in config.py - and a slice of whatever order the
+    # split file happens to be in would not be reproducible.
+    train_ids = list(settings.LIMIT_TRAIN_BRACKETS) or split.train
+    missing = [i for i in train_ids if i not in split.train]
+    if missing:
+        raise SystemExit(
+            f"brackets {missing} are not in the training split. Scoring a "
+            f"model on brackets it trained on is the one mistake this "
+            f"project cannot make quietly.")
+
+    val_ids = split.val
+    if settings.LIMIT_VAL_BRACKETS:
+        val_ids = split.val[:settings.LIMIT_VAL_BRACKETS]
+
     # ---- say clearly which run this is ------------------------------------
     print("=" * 70)
     if arguments.quick:
         print("QUICK CHECK - tiny network, 3 epochs. Not a result.")
+    elif arguments.overfit:
+        print("OVERFIT TEST - can it memorise 16 brackets? A DIAGNOSTIC.")
+        print("The number to read is TRAIN R-squared. Nothing here is a result,")
+        print("and the checkpoint it writes is not a model to keep.")
     else:
         print("FULL RUN")
     print("=" * 70)
@@ -188,8 +270,10 @@ def main():
           f"lr {settings.LEARNING_RATE}, weight decay {settings.WEIGHT_DECAY}")
     print(f"  stopping   : up to {settings.MAX_EPOCHS} epochs, "
           f"patience {settings.PATIENCE}, budget {settings.MAX_HOURS} h")
-    print(f"  brackets   : {len(split.train)} train, {len(split.val)} val, "
+    print(f"  brackets   : {len(train_ids)} train, {len(val_ids)} val, "
           f"{len(split.test)} test")
+    if settings.LIMIT_TRAIN_BRACKETS:
+        print(f"  training on: {sorted(train_ids)}")
 
     (run_directory / "settings.json").write_text(
         json.dumps(settings_as_dict(settings), indent=2))
@@ -201,15 +285,15 @@ def main():
             batch_size=settings.BATCH_SIZE, shuffle=shuffle,
             seed=settings.SEED)
 
-    train_loader = make_loader(split.train, shuffle=True)
-    val_loader = make_loader(split.val, shuffle=False)
+    train_loader = make_loader(train_ids, shuffle=True)
+    val_loader = make_loader(val_ids, shuffle=False)
 
     # ---- the number to beat ------------------------------------------------
     # Worked out before training, from the training brackets. A model that
     # cannot beat "always guess the average" has learned nothing, whatever its
     # loss curve looks like.
     baseline = training_module.trivial_baseline_mpa(
-        make_loader(split.train, shuffle=False))
+        make_loader(train_ids, shuffle=False))
     print(f"  to beat    : {baseline:,.1f} MPa "
           f"(always guessing the average stress)")
 
@@ -257,8 +341,7 @@ def main():
     print("=" * 70)
 
     device = torch.device(settings.DEVICE if torch.cuda.is_available() else "cpu")
-    for name in ("train", "val"):
-        members = getattr(split, name)
+    for name, members in (("train", train_ids), ("val", val_ids)):
         scores = training_module.evaluate(
             model, make_loader(members, shuffle=False), scalers,
             settings.LOG_TARGET, device, settings.PEAK_WEIGHT,
